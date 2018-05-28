@@ -1,0 +1,16 @@
+Optimisation1:
+maxTrucks = maxCap = 20, step=1
+Minimum unit cost = 1.5581 at optTrucks = 7 and optCap = 20. Verify Val = 1.5581
+
+Optimisation2:
+maxTrucks=20, step=1
+maxCap=100, step=5
+Minimum unit cost = 0.7768 at optTrucks = 2 and optCap = 100. Verify Val = 0.7768
+
+Optimisation3:
+maxTrucks=20, step=1
+maxCap=1000, step=50
+Minimum unit cost = 0.6511 at optTrucks = 1 and optCap = 100. Verify Val = 0.6511
+
+
+
