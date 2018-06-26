@@ -1,0 +1,11 @@
+find the setting closest to our problem and use their update regime. Possible settings are:
+1. average reward (mahadevan paper)
+2. elevator (barto paper)
+3. policy gradient in smdp
+
+
+a. per truck smdp update
+b. reward = -1 * time of truck cycle
+c. td_target = reward + df * value of cur state
+d. td_error = td_target - value of old state for this truck 
+e. try df=1
