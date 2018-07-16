@@ -560,7 +560,7 @@ def main():
     #run session (initialise tf global vars)
     sess.run(init)
 
-    num_episodes = 400
+    num_episodes = 200
     # Keeps track of useful statistics
     stats = plotting.EpisodeStats(
         episode_lengths=np.zeros(num_episodes),
