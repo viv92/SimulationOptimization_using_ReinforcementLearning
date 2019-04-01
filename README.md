@@ -1,4 +1,4 @@
-# SimulationOptimization_using_ReinforcementLearning
+# Simulation Optimization using Reinforcement Learning
 
 ### Description
 Simulation Optimization (of Earth Moving operation) using Reinforcement Learning
@@ -8,9 +8,9 @@ Python 2.7 and Tensorflow 1.8.0
 
 ### Repository structure:
 
-/papers                                 {reference papers used}
+'/papers'                                 {reference papers used}
 
-/publication.pdf                        {publication based on the project}
+'/publication.pdf'                        {publication based on the project}
 
 /simpy_programs                         {all programs developed as part of the project}
 
