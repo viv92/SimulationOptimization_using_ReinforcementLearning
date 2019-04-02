@@ -5,7 +5,6 @@ This is an ongoing research project exploring various reinforcement learning met
 
 ![alt text](https://www.overleaf.com/project/5be3d636cbffe144da842ee3/file/5be3d637cbffe144da842ee9)
 
-
 ### Dependencies 
 Python 2.7 and Tensorflow 1.8.0
 
