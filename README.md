@@ -3,7 +3,7 @@
 ### Description
 This is an ongoing research project exploring various reinforcement learning methodologies along with transfer learning to optimization different industrial processes involved in construction planning domain. Currently the project is focused on optimizing an earthmoving operation formulated as a MDP with resource contraints.
 
-![Alt text](Simulation_Optimization_Project/simpy_programs/results/meth.png?raw=true "Title")
+![Alt text](simpy_programs/results/meth.png?raw=true "Title")
 
 ### Dependencies 
 Python 2.7 and Tensorflow 1.8.0
