@@ -1,4 +1,4 @@
-## Simulation Optimization using Reinforcement Learning
+# Simulation Optimization using Reinforcement Learning
 
 ### Description
 This is an ongoing research project exploring various reinforcement learning methodologies along with transfer learning to optimization different industrial processes involved in construction planning domain. Currently the project is focussed on optimizing an earthmoving operation formulated as a MDP with resource contraints.
