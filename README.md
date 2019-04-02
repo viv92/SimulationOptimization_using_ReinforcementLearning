@@ -5,7 +5,7 @@ This is an ongoing research project exploring various reinforcement learning met
 
 ![Alt text](simpy_programs/results/meth.png?raw=true "Title")
 
-The publication resulting from the project can be found at [relative link](publication.pdf)
+The publication resulting from the project can be found [here](publication.pdf)
 
 ### Dependencies 
 - Python 2.7 
