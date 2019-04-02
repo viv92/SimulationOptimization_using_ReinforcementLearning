@@ -20,7 +20,7 @@ def EnterAreaB_time(TruckSpdRatio):
 def DumpBucketA_time():
     return np.random.uniform(0.32, 0.34)
 def DumpBucketB_time():
-    return np.random.uniform(0.16, 0.17)
+    return np.random.uniform(0.32, 0.34)
 def ExcavateA_time():
     return np.random.uniform(0.33, 0.37)
 def ExcavateB_time():
@@ -324,7 +324,8 @@ def monitor(env, DmpdSoil, TrkWtLdA, TrkWtLdB, SoilAmt, nTrucks, TruckCap):
             ProdRate.append(L_prodRate)
             UnitCst.append(L_unitCst)
 
-            print """nTrucks = %d\n
+            print ("""
+            nTrucks = %d\n
             num_of_load = %d \n
             num_of_dump = %d \n
             num_of_return = %d \n
@@ -333,7 +334,7 @@ def monitor(env, DmpdSoil, TrkWtLdA, TrkWtLdB, SoilAmt, nTrucks, TruckCap):
             ProdRate = %.4f \n
             UnitCst = %.4f
             """ % (nTrucks, num_of_load, num_of_dump, num_of_return,
-            L_hrs, L_hourlyCst, L_prodRate, L_unitCst)
+            L_hrs, L_hourlyCst, L_prodRate, L_unitCst))
             return
 
         yield env.timeout(1)
@@ -346,7 +347,7 @@ np.random.seed(0)
 num_of_load = 0
 num_of_dump = 0
 num_of_return = 0
-nTrucks = 10
+nTrucks = 20
 
 ''' global state vector
 state[0]: num of Trk1 WtLdA
@@ -366,59 +367,48 @@ old_state = np.zeros((nTrucks,12))
 old_time = np.zeros(nTrucks)
 old_action = np.zeros(nTrucks).astype(int)
 nA = 2 #number of actions
-old_action_probs = np.zeros(nA)
 discount_factor = 0.99
-alpha_vf = 1e-3 #learning_rate
-alpha_policy = 1e-4 #learning_rate
-kl_target = 0.003 #max KL divergence allowed
-max_policy_epochs = 20
+alpha_critic = 1e-2 #learning_rate
+alpha_actor = 1e-3 #learning_rate
 
 #get interactive session
 sess = tf.InteractiveSession()
 #placeholder for observation
 obs = tf.placeholder(tf.float32, shape=[12])
 
-#vf network
-fc_shared = tf.contrib.layers.fully_connected(inputs=tf.expand_dims(obs,0), num_outputs=24, activation_fn=tf.nn.relu, weights_initializer=tf.contrib.layers.xavier_initializer())
-vf_output = tf.contrib.layers.fully_connected(inputs=fc_shared, num_outputs=1, activation_fn=None, weights_initializer=tf.contrib.layers.xavier_initializer())
+#critic network - LINEAR
+critic_output = tf.contrib.layers.fully_connected(inputs=tf.expand_dims(obs,0), num_outputs=1, activation_fn=None, weights_initializer=tf.contrib.layers.xavier_initializer())
 #state value
-state_value = tf.squeeze(vf_output)
-#vf target
-vf_target = tf.placeholder(tf.float32, shape=[])
-#vf loss
-vf_loss = tf.squared_difference(vf_target, state_value)
+state_value = tf.squeeze(critic_output)
+#critic target
+critic_target = tf.placeholder(tf.float32, shape=[])
+#critic loss
+critic_loss = tf.squared_difference(critic_target, state_value)
 #optimizer
-vf_optimizer = tf.train.AdamOptimizer(learning_rate=alpha_vf)
+critic_optimizer = tf.train.GradientDescentOptimizer(learning_rate=alpha_critic)
 #training op
-vf_train_op = vf_optimizer.minimize(vf_loss)
+critic_train_op = critic_optimizer.minimize(critic_loss)
 
-#policy network
-policy_hidden = tf.contrib.layers.fully_connected(inputs=fc_shared, num_outputs=12, activation_fn=tf.nn.relu, weights_initializer=tf.contrib.layers.xavier_initializer())
-policy_output = tf.contrib.layers.fully_connected(inputs=policy_hidden, num_outputs=nA, activation_fn=None, weights_initializer=tf.contrib.layers.xavier_initializer())
+#actor network - LINEAR
+actor_output = tf.contrib.layers.fully_connected(inputs=tf.expand_dims(obs,0), num_outputs=nA, activation_fn=None, weights_initializer=tf.contrib.layers.xavier_initializer())
 #action probabilities
-action_probs = tf.squeeze(tf.nn.softmax(policy_output))
-#old policy distribution
-action_probs_old = tf.placeholder(tf.float32, shape=[2])
+action_probs = tf.squeeze(tf.nn.softmax(actor_output))
 #placeholder for chosen action
 chosen_action = tf.placeholder(tf.int32, shape=[])
 #probability of chosen action
 prob_chosen_action = tf.gather(action_probs, chosen_action)
-#probability of chosen action in old policy
-oldprob_chosen_action = tf.gather(action_probs_old, chosen_action)
 #placeholder for advantage
 advantage = tf.placeholder(tf.float32, shape=[])
-#surrogate loss function - TODO stop gradient on advantage ?
-surrloss = -tf.reduce_mean(advantage * (prob_chosen_action / oldprob_chosen_action))
-#KL divergence between old policy and current policy
-kldiv = tf.reduce_sum(action_probs_old * tf.log((action_probs_old + 1e-10) / (action_probs + 1e-10)))
-#entropy of current policy
-entropy = tf.reduce_sum(-action_probs * tf.log(action_probs + 1e-10))
-#Experiment: add entropy to current loss
-final_loss = tf.add(surrloss, 0.1*entropy)
+#loss function
+loss = -tf.reduce_sum(tf.log(prob_chosen_action + 1e-10) * tf.stop_gradient(advantage))
+#add entropy of action_probs to encourage exploration
+entropy = tf.reduce_sum(action_probs * tf.log(action_probs + 1e-10))
+#final loss
+actor_loss = tf.add(loss, 0.1*entropy)
 #optimizer
-policy_optimizer = tf.train.AdamOptimizer(learning_rate=alpha_policy)
+actor_optimizer = tf.train.GradientDescentOptimizer(learning_rate=alpha_actor)
 #training op
-policy_train_op = policy_optimizer.minimize(final_loss)
+actor_train_op = actor_optimizer.minimize(actor_loss)
 
 #global vars init
 init = tf.global_variables_initializer()
@@ -429,11 +419,8 @@ def agent(truckName, time):
     global old_state #state for which we are learning
     global old_time
     global old_action
-    global old_action_probs
     global Mean_TD_Error
     global Iterations
-    global kl_target
-    global max_policy_epochs
     truckIndex = int(truckName[len('truck')])
     reward = -1 * (time - old_time[truckIndex]) #time of cycle for this truck
 
@@ -445,14 +432,8 @@ def agent(truckName, time):
         Iterations += 1
         Mean_TD_Error = ((Iterations-1)*Mean_TD_Error + td_error)/Iterations
         #update
-        sess.run(vf_train_op, feed_dict={obs: old_state[truckIndex], vf_target: td_target})
-        policy_epochs = 0
-        while policy_epochs < max_policy_epochs:
-            sess.run(policy_train_op, feed_dict={obs: old_state[truckIndex], chosen_action: old_action[truckIndex], advantage: td_error, action_probs_old: old_action_probs})
-            kl = kldiv.eval(feed_dict={obs: old_state[truckIndex], action_probs_old: old_action_probs})
-            if kl > kl_target:
-                break
-            policy_epochs += 1
+        sess.run(critic_train_op, feed_dict={obs: old_state[truckIndex], critic_target: td_target})
+        sess.run(actor_train_op, feed_dict={obs: old_state[truckIndex], chosen_action: old_action[truckIndex], advantage: td_error})
         #get action for current state
         cur_action_probs = action_probs.eval(feed_dict={obs: state})
         action = np.random.choice(np.arange(nA), p=cur_action_probs)
@@ -463,7 +444,6 @@ def agent(truckName, time):
     #set up for next decision call
     np.copyto(old_state[truckIndex], state)
     old_action[truckIndex] = action
-    np.copyto(old_action_probs, cur_action_probs)
     old_time[truckIndex] = time
 
     return action
@@ -548,10 +528,10 @@ def main():
     global nTrucks
 
     BucketA_capacity = 1.5
-    BucketB_capacity = 6.0
-    Truck1_capacity = 9
+    BucketB_capacity = 1.0
+    Truck1_capacity = 6
     Truck2_capacity = 3
-    Truck1_speed = 35.0
+    Truck1_speed = 15.0
     Truck2_speed = 20.0
     Truck1_speedRatio = Truck1_speed / (Truck1_speed + Truck2_speed)
     Truck2_speedRatio = Truck2_speed / (Truck1_speed + Truck2_speed)
@@ -559,7 +539,7 @@ def main():
     #run session (initialise tf global vars)
     sess.run(init)
 
-    num_episodes = 10
+    num_episodes = 200
     # Keeps track of useful statistics
     stats = plotting.EpisodeStats(
         episode_lengths=np.zeros(num_episodes),
@@ -577,14 +557,13 @@ def main():
         Iterations = 0
         # Print out which episode we're on, useful for debugging.
         if i_episode % 1 == 0:
-            print "\rEpisode: ", i_episode + 1, " / ", num_episodes
+            print ("\rEpisode: ", i_episode + 1, " / ", num_episodes)
         #run simulation
         run_sim(nTrucks, BucketA_capacity, BucketB_capacity, Truck1_capacity, Truck2_capacity, Truck1_speedRatio, Truck2_speedRatio)
         stats.episode_lengths[i_episode] = Hrs[i_episode]
         stats.episode_rewards[i_episode] = ProdRate[i_episode]
         stats.episode_loss[i_episode] = abs(Mean_TD_Error)
-    plotting.plot_episode_stats(stats, name="TRPO", smoothing_window=20)
-
+    plotting.plot_episode_stats(stats, name='Linear_actorCritic_20', smoothing_window=20)
 
 if __name__ == '__main__':
     main()

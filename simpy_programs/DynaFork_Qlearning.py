@@ -7,6 +7,7 @@ import sys
 import os
 import itertools
 import matplotlib
+matplotlib.use('Agg')
 
 from lib import plotting
 matplotlib.style.use('ggplot')
@@ -16,13 +17,13 @@ matplotlib.style.use('ggplot')
 def EnterAreaA_time(TruckSpdRatio):
     return (TruckSpdRatio * np.random.uniform(0.3, 0.34))
 def EnterAreaB_time(TruckSpdRatio):
-    return (TruckSpdRatio * np.random.uniform(0.22, 0.26))
+    return (TruckSpdRatio * np.random.uniform(0.3, 0.34))
 def DumpBucketA_time():
-    return np.random.uniform(0.32, 0.34)
+    return np.random.uniform(0.16, 0.17)
 def DumpBucketB_time():
     return np.random.uniform(0.32, 0.34)
 def ExcavateA_time():
-    return np.random.uniform(0.33, 0.37)
+    return np.random.uniform(0.16, 0.17)
 def ExcavateB_time():
     return np.random.uniform(0.33, 0.37)
 def Haul_time(TruckSpdRatio):
@@ -42,6 +43,9 @@ def Return1B_time(TruckSpdRatio):
 
 def DumpBucketA(env, TrkUndrExcA, ExcWtDmpA, SlInTrkA, BucketA_capacity):
     global state
+    global g_Truck1_capacity
+    global g_Truck2_capacity
+
     while TrkUndrExcA.level == 0:
         yield env.timeout(1)
     #print "In DumpBucketA, TrkUndrExcA=%d" % TrkUndrExcA.level
@@ -50,14 +54,17 @@ def DumpBucketA(env, TrkUndrExcA, ExcWtDmpA, SlInTrkA, BucketA_capacity):
     yield env.timeout(DumpBucketA_time())
     yield SlInTrkA.put(BucketA_capacity)
     if state[8] > 0:
-        state[8] -= (BucketA_capacity/6)
+        state[8] -= (BucketA_capacity/float(g_Truck1_capacity))
     else:
-        state[9] -= (BucketA_capacity/3)
+        state[9] -= (BucketA_capacity/g_Truck2_capacity)
     env.process(ExcavateA(env, TrkUndrExcA, ExcWtDmpA, SlInTrkA, BucketA_capacity))
     #print "finished DumpBucketA with SlInTrkA=%.2f at %.2f" % (SlInTrkA.level, env.now)
 
 def DumpBucketB(env, TrkUndrExcB, ExcWtDmpB, SlInTrkB, BucketB_capacity):
     global state
+    global g_Truck1_capacity
+    global g_Truck2_capacity
+
     while TrkUndrExcB.level == 0:
         yield env.timeout(1)
     #print "In DumpBucketB, TrkUndrExcB=%d" % TrkUndrExcB.level
@@ -66,9 +73,9 @@ def DumpBucketB(env, TrkUndrExcB, ExcWtDmpB, SlInTrkB, BucketB_capacity):
     yield env.timeout(DumpBucketB_time())
     yield SlInTrkB.put(BucketB_capacity)
     if state[10] > 0:
-        state[10] -= (BucketB_capacity/6)
+        state[10] -= (BucketB_capacity/float(g_Truck1_capacity))
     else:
-        state[11] -= (BucketB_capacity/3)
+        state[11] -= (BucketB_capacity/g_Truck2_capacity)
     env.process(ExcavateB(env, TrkUndrExcB, ExcWtDmpB, SlInTrkB, BucketB_capacity))
     #print "finished DumpBucketB with SlInTrkB=%.2f at %.2f" % (SlInTrkB.level, env.now)
 
@@ -91,6 +98,8 @@ def EnterAreaA(env, name, TrkWtLdA, TrkWtLdB,
 ManeuvSpcA, ManeuvSpcB, TrkUndrExcA, TrkUndrExcB, SlInTrkA, SlInTrkB,
 ExcWtDmpA, ExcWtDmpB, WtEnterDump, DumpSpots, DmpdSoil, TruckCap, TruckSpdRatio):
     global state
+    global g_Truck1_capacity
+
     #while (DmpdSoil.level + soil_ready_to_dump) > (SoilAmt - TruckCap): #wait here if SoilAmt met
     #    yield env.timeout(1)
     yield TrkUndrExcA.put(1) #will move forward only if TrkUndrExc.level was 0, also blocks other trucks
@@ -99,14 +108,14 @@ ExcWtDmpA, ExcWtDmpB, WtEnterDump, DumpSpots, DmpdSoil, TruckCap, TruckSpdRatio)
     #print "%s inside EnterAreaA - got 1 ManeuvSpcA. ManeuvSpcA.level=%d at %.2f" % (name, ManeuvSpcA.level, env.now)
     yield TrkWtLdA.get(1)
     #print "%s starting EnterAreaA at %.2f" % (name, env.now)
-    if TruckCap == 6:
+    if TruckCap == g_Truck1_capacity:
         state[0] -= 1
         state[4] = 1
     else:
         state[1] -= 1
         state[5] = 1
     yield env.timeout(EnterAreaA_time(TruckSpdRatio))
-    if TruckCap == 6:
+    if TruckCap == g_Truck1_capacity:
         state[4] = 0
         state[8] = 1
     else:
@@ -123,6 +132,8 @@ def EnterAreaB(env, name, TrkWtLdA, TrkWtLdB,
 ManeuvSpcA, ManeuvSpcB, TrkUndrExcA, TrkUndrExcB, SlInTrkA, SlInTrkB,
 ExcWtDmpA, ExcWtDmpB, WtEnterDump, DumpSpots, DmpdSoil, TruckCap, TruckSpdRatio):
     global state
+    global g_Truck1_capacity
+
     #while (DmpdSoil.level + soil_ready_to_dump) > (SoilAmt - TruckCap): #wait here if SoilAmt met
     #    yield env.timeout(1)
     yield TrkUndrExcB.put(1) #will move forward only if TrkUndrExc.level was 0, also blocks other trucks
@@ -131,14 +142,14 @@ ExcWtDmpA, ExcWtDmpB, WtEnterDump, DumpSpots, DmpdSoil, TruckCap, TruckSpdRatio)
     #print "%s inside EnterAreaB - got 1 ManeuvSpcB. ManeuvSpcB.level=%d at %.2f" % (name, ManeuvSpcB.level, env.now)
     yield TrkWtLdB.get(1)
     #print "%s starting EnterAreaB at %.2f" % (name, env.now)
-    if TruckCap == 6:
+    if TruckCap == g_Truck1_capacity:
         state[2] -= 1
         state[6] = 1
     else:
         state[3] -= 1
         state[7] = 1
     yield env.timeout(EnterAreaB_time(TruckSpdRatio))
-    if TruckCap == 6:
+    if TruckCap == g_Truck1_capacity:
         state[6] = 0
         state[10] = 1
     else:
@@ -156,13 +167,14 @@ ManeuvSpcA, ManeuvSpcB, TrkUndrExcA, TrkUndrExcB, SlInTrkA, SlInTrkB,
 ExcWtDmpA, ExcWtDmpB, WtEnterDump, DumpSpots, DmpdSoil, TruckCap, TruckSpdRatio):
     global state
     global num_of_load
+    global g_Truck1_capacity
 
     yield SlInTrkA.get(TruckCap)
     yield TrkUndrExcA.get(1)
     #print "%s inside Haul - got 1 TrkUndrExc. TrkUndrExcA.level=%d; TrkUndrExcB.level=%d at %.2f" % (name, TrkUndrExcA.level, TrkUndrExcB.level, env.now)
     #print "-----%s starting Haul at %.2f" % (name, env.now)
     num_of_load += 1
-    if TruckCap == 6:
+    if TruckCap == g_Truck1_capacity:
         state[8] = 0
     else:
         state[9] = 0
@@ -179,13 +191,14 @@ ManeuvSpcA, ManeuvSpcB, TrkUndrExcA, TrkUndrExcB, SlInTrkA, SlInTrkB,
 ExcWtDmpA, ExcWtDmpB, WtEnterDump, DumpSpots, DmpdSoil, TruckCap, TruckSpdRatio):
     global state
     global num_of_load
+    global g_Truck1_capacity
 
     yield SlInTrkB.get(TruckCap)
     yield TrkUndrExcB.get(1)
     #print "%s inside Haul - got 1 TrkUndrExc. TrkUndrExcA.level=%d; TrkUndrExcB.level=%d at %.2f" % (name, TrkUndrExcA.level, TrkUndrExcB.level, env.now)
     #print "-----%s starting Haul at %.2f" % (name, env.now)
     num_of_load += 1
-    if TruckCap == 6:
+    if TruckCap == g_Truck1_capacity:
         state[10] = 0
     else:
         state[11] = 0
@@ -234,10 +247,35 @@ def Return0(env, name, TrkWtLdA, TrkWtLdB,
 ManeuvSpcA, ManeuvSpcB, TrkUndrExcA, TrkUndrExcB, SlInTrkA, SlInTrkB,
 ExcWtDmpA, ExcWtDmpB, WtEnterDump, DumpSpots, DmpdSoil, TruckCap, TruckSpdRatio):
     global num_of_return
+    global big_wait_penalty
+    global actions_performed_without_maintenance_A
+    global actions_performed_without_maintenance_B
+    global idle_count_A
+    global idle_count_B
+    global repair_downtime_remaining_A
+    global repair_downtime_remaining_B
+    global both_excavators_failed_flag
+
     #print "%s starting Return0 at %.2f" % (name, env.now)
     yield env.timeout(Return0_time(TruckSpdRatio))
     #print "%s finished Return0 at %.2f" % (name, env.now)
     action = agent(name, env.now)
+
+    #check for case when both excavators failed
+    if both_excavators_failed_flag == True:
+        yield env.timeout(big_wait_penalty) #big wait penalty = 2 hrs
+        #restore both excavators as fresh
+        #print "############ BOTH EXCAVATORS REPAIRED  #####################"
+        #print "---------1 remaining down times A:%d \t B:%d" % (repair_downtime_remaining_A, repair_downtime_remaining_B)
+        both_excavators_failed_flag = False
+        repair_downtime_remaining_A = 0
+        repair_downtime_remaining_B = 0
+        actions_performed_without_maintenance_A = 0
+        actions_performed_without_maintenance_B = 0
+        idle_count_A = 0
+        idle_count_B = 0
+        #print "---------2 remaining down times A:%d \t B:%d" % (repair_downtime_remaining_A, repair_downtime_remaining_B)
+
     if action == 0:
         env.process(Return1A(env, name, TrkWtLdA, TrkWtLdB,
         ManeuvSpcA, ManeuvSpcB, TrkUndrExcA, TrkUndrExcB, SlInTrkA, SlInTrkB,
@@ -253,11 +291,13 @@ def Return1A(env, name, TrkWtLdA, TrkWtLdB,
 ManeuvSpcA, ManeuvSpcB, TrkUndrExcA, TrkUndrExcB, SlInTrkA, SlInTrkB,
 ExcWtDmpA, ExcWtDmpB, WtEnterDump, DumpSpots, DmpdSoil, TruckCap, TruckSpdRatio):
     global state
+    global g_Truck1_capacity
+
     #print "%s starting Return1A at %.2f" % (name, env.now)
     yield env.timeout(Return1A_time(TruckSpdRatio))
     #print "-----%s finished Return1A at %.2f" % (name, env.now)
     yield TrkWtLdA.put(1)
-    if TruckCap == 6:
+    if TruckCap == g_Truck1_capacity:
         state[0] += 1
     else:
         state[1] += 1
@@ -270,11 +310,13 @@ def Return1B(env, name, TrkWtLdA, TrkWtLdB,
 ManeuvSpcA, ManeuvSpcB, TrkUndrExcA, TrkUndrExcB, SlInTrkA, SlInTrkB,
 ExcWtDmpA, ExcWtDmpB, WtEnterDump, DumpSpots, DmpdSoil, TruckCap, TruckSpdRatio):
     global state
+    global g_Truck1_capacity
+
     #print "%s starting Return1B at %.2f" % (name, env.now)
     yield env.timeout(Return1B_time(TruckSpdRatio))
     #print "-----%s finished Return1B at %.2f" % (name, env.now)
     yield TrkWtLdB.put(1)
-    if TruckCap == 6:
+    if TruckCap == g_Truck1_capacity:
         state[2] += 1
     else:
         state[3] += 1
@@ -288,12 +330,14 @@ def monitor(env, DmpdSoil, TrkWtLdA, TrkWtLdB, SoilAmt, nTrucks, TruckCap):
     global num_of_load
     global num_of_dump
     global num_of_return
+    global num_decisions
+    global num_decisions_A
+    global num_decisions_B
 
     #global cost params to be updated
     global TrckCst
     global ExcCst
     global OHCst
-
     global HourlyCst
     global Hrs
     global ProdRate
@@ -332,9 +376,13 @@ def monitor(env, DmpdSoil, TrkWtLdA, TrkWtLdB, SoilAmt, nTrucks, TruckCap):
             Hrs = %.4f \n
             HourlyCst = %.4f \n
             ProdRate = %.4f \n
-            UnitCst = %.4f
+            UnitCst = %.4f \n
+            num_decisions = %d \n
+            num_decisions_A = %d \n
+            num_decisions_B = %d \n
+            ratio_A/B = %.4f
             """ % (nTrucks, num_of_load, num_of_dump, num_of_return,
-            L_hrs, L_hourlyCst, L_prodRate, L_unitCst)
+            L_hrs, L_hourlyCst, L_prodRate, L_unitCst, num_decisions, num_decisions_A, num_decisions_B, (num_decisions_A/float(num_decisions_B)))
             return
 
         yield env.timeout(1)
@@ -347,7 +395,29 @@ np.random.seed(0)
 num_of_load = 0
 num_of_dump = 0
 num_of_return = 0
-nTrucks = 10
+nTrucks = 20
+g_Truck1_capacity = 24
+g_Truck2_capacity = 24
+
+num_decisions = 0
+num_decisions_A = 0
+num_decisions_B = 0
+local_decisions_A = []
+local_decisions_B = []
+
+idle_count_A = 0
+idle_count_B = 0
+actions_performed_without_maintenance_A = 0
+actions_performed_without_maintenance_B = 0
+repair_downtime_remaining_A = 0
+repair_downtime_remaining_B = 0
+
+repair_downtime = 15
+maintenance_downtime = 2
+actions_to_failure_without_maintenance = 10
+both_excavators_failed_flag = False
+big_wait_penalty = 60*60 #2 hrs penalty when both excavators fail
+
 
 ''' global state vector
 state[0]: num of Trk1 WtLdA
@@ -361,7 +431,9 @@ state[7]: is Trk2 in ManeuvSpcB (0/1)
 state[8]: % empty Trk1 UndrExcA
 state[9]: % empty Trk2 UndrExcA
 state[10]: % empty Trk1 UndrExcB
-state[11]: % empty Trk2 UndrExcB '''
+state[11]: % empty Trk2 UndrExcB
+state[12]: actions_performed_without_maintenance_A
+state[13]: actions_performed_without_maintenance_B'''
 state = np.zeros(12)
 old_state = np.zeros((nTrucks,12))
 old_time = np.zeros(nTrucks)
@@ -369,15 +441,20 @@ old_action = np.zeros(nTrucks).astype(int)
 nA = 2 #number of actions
 discount_factor = 0.99
 alpha = 1e-3 #learning_rate
-epsilon = 0.1 #epsilon for epsilon_greedy_policy
+epsilon = 0.2 #epsilon for epsilon_greedy_policy
 
 #get interactive session
 sess = tf.InteractiveSession()
 #placeholder for observation
-obs = tf.placeholder(tf.float32, shape=[12])
+obs = tf.placeholder(tf.float32, shape=[14])
+
 #weights for action value function (in the form of a fully connected layer)
-fc = tf.contrib.layers.fully_connected(inputs=tf.expand_dims(obs,0), num_outputs=24, activation_fn=tf.nn.relu, weights_initializer=tf.contrib.layers.xavier_initializer())
-output = tf.contrib.layers.fully_connected(inputs=fc, num_outputs=nA, activation_fn=None, weights_initializer=tf.contrib.layers.xavier_initializer())
+# fc = tf.contrib.layers.fully_connected(inputs=tf.expand_dims(obs,0), num_outputs=24, activation_fn=tf.nn.relu, weights_initializer=tf.contrib.layers.xavier_initializer())
+# output = tf.contrib.layers.fully_connected(inputs=fc, num_outputs=nA, activation_fn=None, weights_initializer=tf.contrib.layers.xavier_initializer())
+
+#weights for action value function (in the form of a LINEAR COMBINATION )
+output = tf.contrib.layers.fully_connected(inputs=tf.expand_dims(obs,0), num_outputs=nA, activation_fn=None, weights_initializer=tf.contrib.layers.xavier_initializer())
+
 action_values = tf.squeeze(output)
 #placeholder for chosen action
 chosen_action = tf.placeholder(tf.int32, shape=[])
@@ -414,29 +491,119 @@ def agent(truckName, time):
     global old_action
     global Mean_TD_Error
     global Iterations
+    global num_decisions
+    global num_decisions_A
+    global num_decisions_B
+    global local_decisions_A
+    global local_decisions_B
+    global idle_count_A
+    global idle_count_B
+    global actions_performed_without_maintenance_A
+    global actions_performed_without_maintenance_B
+    global repair_downtime_remaining_A
+    global repair_downtime_remaining_B
+    global repair_downtime
+    global maintenance_downtime
+    global actions_to_failure_without_maintenance
+    global both_excavators_failed_flag
+
     truckIndex = int(truckName[len('truck')])
     reward = -1 * (time - old_time[truckIndex]) #time of cycle for this truck
 
+    #modification to include maintenance in state vector
+    state_vector_for_maintenance = np.append(state, np.append(actions_performed_without_maintenance_A, actions_performed_without_maintenance_B))
+    old_state_vector_for_maintenance = np.append(old_state[truckIndex], np.append(actions_performed_without_maintenance_A, actions_performed_without_maintenance_B))
+
     if old_time[truckIndex] > 0:  #not the first ever decision - learn for the old_state
-        cur_q_values = action_values.eval(feed_dict={obs: state})
-        old_q_values = action_values.eval(feed_dict={obs: old_state[truckIndex]})
+        cur_q_values = action_values.eval(feed_dict={obs: state_vector_for_maintenance})
+        old_q_values = action_values.eval(feed_dict={obs: old_state_vector_for_maintenance})
         best_next_action = np.argmax(cur_q_values)
         td_target = reward + discount_factor * cur_q_values[best_next_action]
         td_error = td_target - old_q_values[old_action[truckIndex]]
         Iterations += 1
         Mean_TD_Error = ((Iterations-1)*Mean_TD_Error + td_error)/Iterations
         #update
-        sess.run(train_op, feed_dict={obs: old_state[truckIndex], chosen_action: old_action[truckIndex], target: td_target})
+        sess.run(train_op, feed_dict={obs: old_state_vector_for_maintenance, chosen_action: old_action[truckIndex], target: td_target})
         #get action for current state
-        action_probs = policy_mu(state)
+        action_probs = policy_mu(state_vector_for_maintenance)
         action = np.random.choice(np.arange(nA), p=action_probs)
     else: #first ever decision - no learning since no old_action
         action = np.random.choice(np.arange(nA)) #take first action randomly
         Iterations = 1
     #set up for next decision call
-    np.copyto(old_state[truckIndex], state)
+    np.copyto(old_state_vector_for_maintenance, state_vector_for_maintenance)
     old_action[truckIndex] = action
     old_time[truckIndex] = time
+
+    if num_decisions_A == 0 and num_decisions_B == 0:
+        local_decisions_A = []
+        local_decisions_B = []
+
+    #print "---------- remaining down times A:%d \t B:%d" % (repair_downtime_remaining_A, repair_downtime_remaining_B)
+    if repair_downtime_remaining_A > 0 and repair_downtime_remaining_B > 0: #both excavator under repair
+        #print "############   BOTH EXCAVATORS FAILED  #####################"
+        both_excavators_failed_flag = True #big time penalty = 2 hrs
+
+    else:
+
+        if repair_downtime_remaining_A > 0: #cant route to this excavavtor - under repair
+            repair_downtime_remaining_A -= 1 #reduce remaining repair downtime
+            #print "############ EXCAVATOR-A UNDER REPAIR: ACTIONS LEFT: %d #####################" % repair_downtime_remaining_A
+
+            if action == 0:
+                action = 1 #route to other excavator
+
+            if repair_downtime_remaining_A == 0: # repair done - restore excavavtor as fresh
+                #print "############ EXCAVATOR-A REPAIRED  #####################"
+                actions_performed_without_maintenance_A = 0
+                idle_count_A = 0
+
+        if repair_downtime_remaining_B > 0: #cant route to this excavavtor - under repair
+            repair_downtime_remaining_B -= 1 #reduce remaining repair downtime
+            #print "############ EXCAVATOR-B UNDER REPAIR: ACTIONS LEFT: %d #####################" % repair_downtime_remaining_B
+
+            if action == 1:
+                action = 0 #route to other excavator
+
+            if repair_downtime_remaining_B == 0: # repair done - restore excavavtor as fresh
+                #print "############ EXCAVATOR-B REPAIRED  #####################"
+                actions_performed_without_maintenance_B = 0
+                idle_count_B = 0
+
+
+        if action == 0:
+            num_decisions_A += 1
+            actions_performed_without_maintenance_A += 1
+            idle_count_A = 0
+            if repair_downtime_remaining_B == 0:
+                idle_count_B += 1
+        else:
+            num_decisions_B += 1
+            actions_performed_without_maintenance_B += 1
+            idle_count_B = 0
+            if repair_downtime_remaining_A == 0:
+                idle_count_A += 1
+
+        local_decisions_A.append(num_decisions_A)
+        local_decisions_B.append(num_decisions_B)
+        num_decisions += 1
+
+        if repair_downtime_remaining_A == 0 and idle_count_A >= maintenance_downtime:
+            #print "############ EXCAVATOR-A MAINTAINED  #####################"
+            actions_performed_without_maintenance_A = 0
+            idle_count_A = 0
+        if repair_downtime_remaining_B == 0 and idle_count_B >= maintenance_downtime:
+            #print "############ EXCAVATOR-B MAINTAINED  #####################"
+            actions_performed_without_maintenance_B = 0
+            idle_count_B = 0
+
+        if repair_downtime_remaining_A == 0 and actions_performed_without_maintenance_A >= actions_to_failure_without_maintenance:
+            #print "############ EXCAVATOR-A FAILED  #####################"
+            repair_downtime_remaining_A = repair_downtime
+
+        if repair_downtime_remaining_B == 0 and actions_performed_without_maintenance_B >= actions_to_failure_without_maintenance:
+            #print "############ EXCAVATOR-B FAILED  #####################"
+            repair_downtime_remaining_B = repair_downtime
 
     return action
 
@@ -518,25 +685,45 @@ def main():
     global Mean_TD_Error
     global Iterations
     global nTrucks
+    global num_decisions
+    global num_decisions_A
+    global num_decisions_B
+    global local_decisions_A
+    global local_decisions_B
+    global idle_count_A
+    global idle_count_B
+    global actions_performed_without_maintenance_A
+    global actions_performed_without_maintenance_B
+    global repair_downtime_remaining_A
+    global repair_downtime_remaining_B
+    global both_excavators_failed_flag
 
-    BucketA_capacity = 1.5
-    BucketB_capacity = 1.0
-    Truck1_capacity = 6
-    Truck2_capacity = 3
-    Truck1_speed = 15.0
-    Truck2_speed = 20.0
-    Truck1_speedRatio = Truck1_speed / (Truck1_speed + Truck2_speed)
-    Truck2_speedRatio = Truck2_speed / (Truck1_speed + Truck2_speed)
+    global g_Truck1_capacity
+    global g_Truck2_capacity
+
+    BucketA_capacity = 6
+    BucketB_capacity = 3
+    Truck1_capacity = g_Truck1_capacity
+    Truck2_capacity = g_Truck2_capacity
+    Truck1_speed = 20
+    Truck2_speed = 20
+    Truck1_speedRatio = Truck1_speed / float(Truck1_speed + Truck2_speed)
+    Truck2_speedRatio = Truck2_speed / float(Truck1_speed + Truck2_speed)
 
     #run session (initialise tf global vars)
     sess.run(init)
 
-    num_episodes = 200
+    num_episodes = 10000
     # Keeps track of useful statistics
     stats = plotting.EpisodeStats(
         episode_lengths=np.zeros(num_episodes),
         episode_rewards=np.zeros(num_episodes),
-        episode_loss=np.zeros(num_episodes))
+        episode_loss=np.zeros(num_episodes),
+        episode_decisions_A=np.zeros(num_episodes),
+        episode_decisions_B=np.zeros(num_episodes),
+        lastep_decisions_A=[],
+        lastep_decisions_B=[])
+
     for i_episode in range(num_episodes):
         #reset global vars
         num_of_load = 0
@@ -547,15 +734,35 @@ def main():
         old_time = np.zeros(nTrucks)
         Mean_TD_Error = 0
         Iterations = 0
+        num_decisions = 0
+        num_decisions_A = 0
+        num_decisions_B = 0
+        idle_count_A = 0
+        idle_count_B = 0
+        actions_performed_without_maintenance_A = 0
+        actions_performed_without_maintenance_B = 0
+        repair_downtime_remaining_A = 0
+        repair_downtime_remaining_B = 0
+        both_excavators_failed_flag = False
+
         # Print out which episode we're on, useful for debugging.
-        if i_episode % 1 == 0:
-            print "\rEpisode: ", i_episode + 1, " / ", num_episodes
+        print "\rEpisode: ", i_episode + 1, " / ", num_episodes
         #run simulation
         run_sim(nTrucks, BucketA_capacity, BucketB_capacity, Truck1_capacity, Truck2_capacity, Truck1_speedRatio, Truck2_speedRatio)
         stats.episode_lengths[i_episode] = Hrs[i_episode]
         stats.episode_rewards[i_episode] = ProdRate[i_episode]
         stats.episode_loss[i_episode] = abs(Mean_TD_Error)
-    plotting.plot_episode_stats(stats, smoothing_window=20)
+        stats.episode_decisions_A[i_episode] = num_decisions_A
+        stats.episode_decisions_B[i_episode] = num_decisions_B
+
+    stats.lastep_decisions_A.extend(local_decisions_A)
+    stats.lastep_decisions_B.extend(local_decisions_B)
+    # print "local_decisions_A: ", local_decisions_A
+    # print "stats.lastep_decisions_A: ", stats.lastep_decisions_A
+    # print stats.lastep_decisions_A == local_decisions_A
+
+    #plotting.plot_episode_stats(stats, name='Qlearning_20', smoothing_window=20)
+    plotting.plot_episode_stats(stats, name='Qlearning_20_linear', smoothing_window=20)
 
 if __name__ == '__main__':
     main()

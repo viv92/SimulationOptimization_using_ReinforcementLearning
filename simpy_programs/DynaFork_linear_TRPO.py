@@ -324,7 +324,8 @@ def monitor(env, DmpdSoil, TrkWtLdA, TrkWtLdB, SoilAmt, nTrucks, TruckCap):
             ProdRate.append(L_prodRate)
             UnitCst.append(L_unitCst)
 
-            print """nTrucks = %d\n
+            print """
+            nTrucks = %d\n
             num_of_load = %d \n
             num_of_dump = %d \n
             num_of_return = %d \n
@@ -368,8 +369,8 @@ old_action = np.zeros(nTrucks).astype(int)
 nA = 2 #number of actions
 old_action_probs = np.zeros(nA)
 discount_factor = 0.99
-alpha_vf = 1e-3 #learning_rate
-alpha_policy = 1e-4 #learning_rate
+alpha_vf = 1e-2 #learning_rate
+alpha_policy = 1e-3 #learning_rate
 kl_target = 0.003 #max KL divergence allowed
 max_policy_epochs = 20
 
@@ -379,8 +380,7 @@ sess = tf.InteractiveSession()
 obs = tf.placeholder(tf.float32, shape=[12])
 
 #vf network
-fc_shared = tf.contrib.layers.fully_connected(inputs=tf.expand_dims(obs,0), num_outputs=24, activation_fn=tf.nn.relu, weights_initializer=tf.contrib.layers.xavier_initializer())
-vf_output = tf.contrib.layers.fully_connected(inputs=fc_shared, num_outputs=1, activation_fn=None, weights_initializer=tf.contrib.layers.xavier_initializer())
+vf_output = tf.contrib.layers.fully_connected(inputs=tf.expand_dims(obs,0), num_outputs=1, activation_fn=None, weights_initializer=tf.contrib.layers.xavier_initializer())
 #state value
 state_value = tf.squeeze(vf_output)
 #vf target
@@ -393,8 +393,7 @@ vf_optimizer = tf.train.AdamOptimizer(learning_rate=alpha_vf)
 vf_train_op = vf_optimizer.minimize(vf_loss)
 
 #policy network
-policy_hidden = tf.contrib.layers.fully_connected(inputs=fc_shared, num_outputs=12, activation_fn=tf.nn.relu, weights_initializer=tf.contrib.layers.xavier_initializer())
-policy_output = tf.contrib.layers.fully_connected(inputs=policy_hidden, num_outputs=nA, activation_fn=None, weights_initializer=tf.contrib.layers.xavier_initializer())
+policy_output = tf.contrib.layers.fully_connected(inputs=tf.expand_dims(obs,0), num_outputs=nA, activation_fn=None, weights_initializer=tf.contrib.layers.xavier_initializer())
 #action probabilities
 action_probs = tf.squeeze(tf.nn.softmax(policy_output))
 #old policy distribution
@@ -548,10 +547,10 @@ def main():
     global nTrucks
 
     BucketA_capacity = 1.5
-    BucketB_capacity = 6.0
-    Truck1_capacity = 9
+    BucketB_capacity = 1.0
+    Truck1_capacity = 6
     Truck2_capacity = 3
-    Truck1_speed = 35.0
+    Truck1_speed = 15.0
     Truck2_speed = 20.0
     Truck1_speedRatio = Truck1_speed / (Truck1_speed + Truck2_speed)
     Truck2_speedRatio = Truck2_speed / (Truck1_speed + Truck2_speed)
@@ -559,7 +558,7 @@ def main():
     #run session (initialise tf global vars)
     sess.run(init)
 
-    num_episodes = 10
+    num_episodes = 50
     # Keeps track of useful statistics
     stats = plotting.EpisodeStats(
         episode_lengths=np.zeros(num_episodes),
@@ -583,7 +582,7 @@ def main():
         stats.episode_lengths[i_episode] = Hrs[i_episode]
         stats.episode_rewards[i_episode] = ProdRate[i_episode]
         stats.episode_loss[i_episode] = abs(Mean_TD_Error)
-    plotting.plot_episode_stats(stats, name="TRPO", smoothing_window=20)
+    plotting.plot_episode_stats(stats, name="Linear_TRPO", smoothing_window=20)
 
 
 if __name__ == '__main__':

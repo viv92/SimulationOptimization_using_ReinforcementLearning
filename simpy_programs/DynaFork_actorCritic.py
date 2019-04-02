@@ -20,7 +20,7 @@ def EnterAreaB_time(TruckSpdRatio):
 def DumpBucketA_time():
     return np.random.uniform(0.32, 0.34)
 def DumpBucketB_time():
-    return np.random.uniform(0.32, 0.34)
+    return np.random.uniform(0.16, 0.17)
 def ExcavateA_time():
     return np.random.uniform(0.33, 0.37)
 def ExcavateB_time():
@@ -347,7 +347,7 @@ np.random.seed(0)
 num_of_load = 0
 num_of_dump = 0
 num_of_return = 0
-nTrucks = 10
+nTrucks = 20
 
 ''' global state vector
 state[0]: num of Trk1 WtLdA
@@ -530,10 +530,10 @@ def main():
     global nTrucks
 
     BucketA_capacity = 1.5
-    BucketB_capacity = 1.0
-    Truck1_capacity = 6
+    BucketB_capacity = 6.0
+    Truck1_capacity = 9
     Truck2_capacity = 3
-    Truck1_speed = 15.0
+    Truck1_speed = 35.0
     Truck2_speed = 20.0
     Truck1_speedRatio = Truck1_speed / (Truck1_speed + Truck2_speed)
     Truck2_speedRatio = Truck2_speed / (Truck1_speed + Truck2_speed)
@@ -565,7 +565,7 @@ def main():
         stats.episode_lengths[i_episode] = Hrs[i_episode]
         stats.episode_rewards[i_episode] = ProdRate[i_episode]
         stats.episode_loss[i_episode] = abs(Mean_TD_Error)
-    plotting.plot_episode_stats(stats, smoothing_window=20)
+    plotting.plot_episode_stats(stats, name='actorCritic_20', smoothing_window=20)
 
 if __name__ == '__main__':
     main()

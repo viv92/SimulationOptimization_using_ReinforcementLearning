@@ -1,5 +1,6 @@
 import simpy
 import numpy as np
+import math
 import tensorflow as tf
 import scipy
 from collections import defaultdict
@@ -324,7 +325,8 @@ def monitor(env, DmpdSoil, TrkWtLdA, TrkWtLdB, SoilAmt, nTrucks, TruckCap):
             ProdRate.append(L_prodRate)
             UnitCst.append(L_unitCst)
 
-            print """nTrucks = %d\n
+            print """
+            nTrucks = %d\n
             num_of_load = %d \n
             num_of_dump = %d \n
             num_of_return = %d \n
@@ -371,7 +373,6 @@ discount_factor = 0.99
 alpha_vf = 1e-3 #learning_rate
 alpha_policy = 1e-4 #learning_rate
 kl_target = 0.003 #max KL divergence allowed
-max_policy_epochs = 20
 
 #get interactive session
 sess = tf.InteractiveSession()
@@ -393,8 +394,8 @@ vf_optimizer = tf.train.AdamOptimizer(learning_rate=alpha_vf)
 vf_train_op = vf_optimizer.minimize(vf_loss)
 
 #policy network
-policy_hidden = tf.contrib.layers.fully_connected(inputs=fc_shared, num_outputs=12, activation_fn=tf.nn.relu, weights_initializer=tf.contrib.layers.xavier_initializer())
-policy_output = tf.contrib.layers.fully_connected(inputs=policy_hidden, num_outputs=nA, activation_fn=None, weights_initializer=tf.contrib.layers.xavier_initializer())
+policy_hidden = tf.contrib.layers.fully_connected(inputs=fc_shared, num_outputs=12, scope='policy_hidden', activation_fn=tf.nn.relu, weights_initializer=tf.contrib.layers.xavier_initializer())
+policy_output = tf.contrib.layers.fully_connected(inputs=policy_hidden, num_outputs=nA, scope='policy_output', activation_fn=None, weights_initializer=tf.contrib.layers.xavier_initializer())
 #action probabilities
 action_probs = tf.squeeze(tf.nn.softmax(policy_output))
 #old policy distribution
@@ -408,20 +409,105 @@ oldprob_chosen_action = tf.gather(action_probs_old, chosen_action)
 #placeholder for advantage
 advantage = tf.placeholder(tf.float32, shape=[])
 #surrogate loss function - TODO stop gradient on advantage ?
-surrloss = -tf.reduce_mean(advantage * (prob_chosen_action / oldprob_chosen_action))
+surrogate = tf.reduce_mean(advantage * (prob_chosen_action / oldprob_chosen_action))
+
+theta = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, 'policy_hidden')
+theta_w, theta_b = theta
+
+#first derivative of surrogate (g)
+#g = tf.gradients(ys=surrogate, xs=theta)
+grad_surrogate_w, grad_surrogate_b = tf.gradients(ys=surrogate, xs=theta)
+#print "grad_surrogate_w: ", grad_surrogate_w
+
 #KL divergence between old policy and current policy
 kldiv = tf.reduce_sum(action_probs_old * tf.log((action_probs_old + 1e-10) / (action_probs + 1e-10)))
-#entropy of current policy
-entropy = tf.reduce_sum(-action_probs * tf.log(action_probs + 1e-10))
-#Experiment: add entropy to current loss
-final_loss = tf.add(surrloss, 0.1*entropy)
-#optimizer
-policy_optimizer = tf.train.AdamOptimizer(learning_rate=alpha_policy)
-#training op
-policy_train_op = policy_optimizer.minimize(final_loss)
+#print "kldiv: ", kldiv
+
+#kl gradient - used for hessian vector product
+kl_grad_w, kl_grad_b = tf.gradients(ys=kldiv, xs=theta)
+#print "kl_grad_w: ", kl_grad_w
+
+#placeholder for vector passed in hessian vector product
+v = tf.placeholder(tf.float32, shape=[288])
+#v = tf.reshape(v, [-1, 1])
+#print "v: ", v
+
+#kl gradient vector product - inner product
+#kl_grad_vector_prod = tf.tensordot(kl_grad, v, 1)
+kl_grad_vector_prod = tf.tensordot(tf.reshape(kl_grad_w, [-1]), v, 1)
+#print "kl_grad_vector_prod: ", kl_grad_vector_prod
+
+#kl hessian vector product - used as functional for finding x using conjugate gradient
+kl_hessian_vector_prod_w, kl_hessian_vector_prod_b = tf.gradients(kl_grad_vector_prod, theta)
+#print "kl_hessian_vector_prod: ", kl_hessian_vector_prod
 
 #global vars init
-init = tf.global_variables_initializer()
+initi = tf.global_variables_initializer()
+
+#run session (initialise tf global vars)
+sess.run(initi)
+
+#conjugate gradient
+def conjugate_gradient(ob, action, advntg, old_action_probs, cg_iters=10, tolerance=1e-10):
+    #print "in conjugate_gradient 1"
+    g = tf.convert_to_tensor(grad_surrogate_w)
+    #print "in conjugate_gradient 01"
+    b = g.eval(feed_dict={obs: ob, chosen_action: action, advantage: advntg, action_probs_old: old_action_probs})
+    b = b.ravel()
+    #print "b.shape: ", b.shape
+    #b = 0
+    #just for initialization
+    x = 0
+    r = b.copy() #remaining error in b space
+    d = b.copy() #conjugate direction
+    #r = 0
+    #d = np.zeros(12)
+    rdotr = r.dot(r)
+    #rdotr = 0
+    #begin iterations
+    for i in range(cg_iters):
+        #print "in conjugate_gradient 3"
+        tmp = tf.convert_to_tensor(kl_hessian_vector_prod_w)
+        #print "in conjugate_gradient 4"
+        z = tmp.eval(feed_dict={obs: ob, action_probs_old: old_action_probs, chosen_action: action, advantage: advntg, v: d})
+        z = z.ravel()
+        #print "in conjugate_gradient 5"
+        alpha = rdotr/(d.dot(z)) #step size
+        x += alpha * d #new point
+        new_r = r - alpha * z #new error
+        new_rdotr = new_r.dot(new_r)
+        beta = new_rdotr/rdotr #correction for new conjugate direction
+        d = new_r + beta * d #new direction
+        rdotr = new_rdotr #for next iteration
+        if rdotr < tolerance:
+            break
+    return (x,b)
+
+#line search for step size of natural gradient descent
+def line_search(x, g, delta, ob, action, advntg, old_action_probs, max_attempts=2):
+    beta = math.sqrt(2*delta/(x.dot(g))) #maximum step size advised
+    surrogate_value = surrogate.eval(feed_dict={obs: ob, action_probs_old: old_action_probs, chosen_action: action, advantage: advntg})
+    #get current weights of neural network
+    # theta = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, 'policy_network')
+    thet_w = tf.convert_to_tensor(theta_w)
+    #begin line search
+    for shrink_factor in (0.8 ** np.arange(max_attempts)):
+        #new step size
+        beta *= shrink_factor
+        # print "-------thet_w.shape: ", thet_w.shape
+        # print "-------beta: ", beta
+        # print "-------x.shape: ", x.shape
+        #apply new weights
+        new_theta = tf.reshape(thet_w, [-1]) + beta * x
+        sess.run(tf.assign(theta_w, tf.reshape(new_theta, theta_w.shape)))
+        #new surrogate function and kl div value
+        surrogate_value_new, kl_value_new = sess.run([surrogate, kldiv], feed_dict={obs: ob, action_probs_old: old_action_probs, chosen_action: action, advantage: advntg})
+        if kl_value_new > delta:
+            surrogate_value_new = np.inf
+        improvement = surrogate_value_new - surrogate_value
+        if improvement > 0:
+            return True
+    return False
 
 #Q-learning for now
 def agent(truckName, time):
@@ -447,12 +533,11 @@ def agent(truckName, time):
         #update
         sess.run(vf_train_op, feed_dict={obs: old_state[truckIndex], vf_target: td_target})
         policy_epochs = 0
-        while policy_epochs < max_policy_epochs:
-            sess.run(policy_train_op, feed_dict={obs: old_state[truckIndex], chosen_action: old_action[truckIndex], advantage: td_error, action_probs_old: old_action_probs})
-            kl = kldiv.eval(feed_dict={obs: old_state[truckIndex], action_probs_old: old_action_probs})
-            if kl > kl_target:
-                break
-            policy_epochs += 1
+
+        #train (update) policy
+        x, g = conjugate_gradient(old_state[truckIndex], old_action[truckIndex], td_error, old_action_probs)
+        success_flag = line_search(x, g, kl_target, old_state[truckIndex], old_action[truckIndex], td_error, old_action_probs)
+
         #get action for current state
         cur_action_probs = action_probs.eval(feed_dict={obs: state})
         action = np.random.choice(np.arange(nA), p=cur_action_probs)
@@ -470,7 +555,7 @@ def agent(truckName, time):
 
 
 #input global params
-SoilAmt = 10000
+SoilAmt = 1000
 TrckCst = 48
 ExcCst = 65
 OHCst = 75
@@ -556,8 +641,7 @@ def main():
     Truck1_speedRatio = Truck1_speed / (Truck1_speed + Truck2_speed)
     Truck2_speedRatio = Truck2_speed / (Truck1_speed + Truck2_speed)
 
-    #run session (initialise tf global vars)
-    sess.run(init)
+
 
     num_episodes = 10
     # Keeps track of useful statistics
@@ -583,7 +667,7 @@ def main():
         stats.episode_lengths[i_episode] = Hrs[i_episode]
         stats.episode_rewards[i_episode] = ProdRate[i_episode]
         stats.episode_loss[i_episode] = abs(Mean_TD_Error)
-    plotting.plot_episode_stats(stats, name="TRPO", smoothing_window=20)
+    plotting.plot_episode_stats(stats, name="Manual_TRPO", smoothing_window=20)
 
 
 if __name__ == '__main__':

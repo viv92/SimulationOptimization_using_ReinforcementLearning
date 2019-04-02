@@ -337,12 +337,13 @@ def monitor(env, DmpdSoil, TrkWtLdA, TrkWtLdB, SoilAmt, nTrucks, TruckCap, i_epi
 
 #global variables
 nTrucks = 10
+nSteps = 5
 num_episodes = 200
 nA = 2 #number of actions
 nS = 12 #size of state vector
 discount_factor = 0.99
-alpha_critic = 1e-3 #learning_rate
-alpha_actor = 1e-4 #learning_rate
+alpha_critic = 9*1e-6 #learning_rate
+alpha_actor = 9*1e-7 #learning_rate
 #global input params
 SoilAmt = 10000
 TrckCst = 48
@@ -438,44 +439,80 @@ class Worker():
         self.local_AC = AC_Network(s_size, a_size, self.name, trainer_critic, trainer_actor)
         #op to copy global network weights to local network
         self.update_local_ops = update_target_graph('global', self.name)
+        #episode buffer and n-step counter
+        global nTrucks
+        self.s_buf = np.zeros(((nTrucks, nSteps, nS)))
+        self.a_buf = np.zeros((nTrucks, nSteps))
+        self.r_buf = np.zeros((nTrucks, nSteps))
+        self.step_counter = np.zeros(nTrucks)
 
     def work(self, truckName, time, old_state, old_time, old_action, Iterations, Mean_TD_Error, i_episode, coord, sess):
         global state
         global Mean_Loss
+        global nSteps
+        #print "Starting worker: ", self.name
         with sess.as_default(), sess.graph.as_default():
+            #print "Default graph: ", tf.get_default_graph()
             while not coord.should_stop():
                 #update wieghts of local network to match weights of global network
                 #sess.run(self.update_local_ops)
                 #TODO self.truckIndex ?
                 truckIndex = int(truckName[len('truck')])
-                reward = -1 * (time - old_time[truckIndex]) #time of cycle for this truck
 
-                if old_time[truckIndex] > 0:  #not the first ever decision - learn for the old_state
-                    cur_state_value = self.local_AC.state_value.eval(feed_dict={self.local_AC.obs: state[i_episode]}, session=sess)
-                    old_state_value = self.local_AC.state_value.eval(feed_dict={self.local_AC.obs: old_state[truckIndex]}, session=sess)
-                    td_target = reward + discount_factor * cur_state_value
-                    td_error = td_target - old_state_value
-                    Iterations += 1
-                    Mean_TD_Error = ((Iterations-1)*Mean_TD_Error + td_error)/Iterations
-                    Mean_Loss[i_episode] = abs(Mean_TD_Error)
-                    #train global network
-                    #feed_dict = {self.local_AC.obs: old_state[truckIndex], self.local_AC.critic_target: td_target, self.local_AC.chosen_action: old_action[truckIndex], self.local_AC.advantage: td_error}
-                    #sess.run([self.local_AC.apply_grads_actor, self.local_AC.apply_grads_critic], feed_dict=feed_dict)
-                    sess.run(self.local_AC.apply_grads_critic, feed_dict={self.local_AC.obs: old_state[truckIndex], self.local_AC.critic_target: td_target})
-                    sess.run(self.local_AC.apply_grads_actor, feed_dict={self.local_AC.obs: old_state[truckIndex], self.local_AC.chosen_action: old_action[truckIndex], self.local_AC.advantage: td_error})
-                    #update wieghts of local network to match weights of global network
-                    sess.run(self.update_local_ops)
-                    #get action for current state
-                    cur_action_probs = self.local_AC.action_probs.eval(feed_dict={self.local_AC.obs: state[i_episode]}, session=sess)
-                    action = np.random.choice(np.arange(nA), p=cur_action_probs)
-                else: #first ever decision - no learning since no old_action
+                if old_time[truckIndex] > 0: #not the first ever decision
+                    reward = -1 * (time - old_time[truckIndex]) #time of cycle for this truck
+                    #populate episode buffer for reward and increment step counter
+                    self.r_buf[truckIndex][self.step_counter[truckIndex]] = reward
+                    self.step_counter[truckIndex] += 1
+
+                    if self.step_counter[truckIndex] == nSteps: #time to learn and update params
+                        #make local copy of step_counter for ease
+                        stepIndex = self.step_counter[truckIndex] - 1
+                        #bootstrap for n-th state
+                        G = self.local_AC.state_value.eval(feed_dict={self.local_AC.obs: state[i_episode]}, session=sess)
+                        while stepIndex >= 0:
+                            #state value for state denoted by stepIndex
+                            v = self.local_AC.state_value.eval(feed_dict={self.local_AC.obs: self.s_buf[truckIndex][stepIndex]}, session=sess)
+                            #bootstrap for state denoted by stepIndex
+                            G = self.r_buf[truckIndex][stepIndex] + (discount_factor * G)
+                            error = G - v
+                            Iterations += 1
+                            Mean_TD_Error = ((Iterations-1)*Mean_TD_Error + error)/Iterations
+                            Mean_Loss[i_episode] = abs(Mean_TD_Error)
+                            #train global network
+                            sess.run(self.local_AC.apply_grads_critic, feed_dict={self.local_AC.obs: self.s_buf[truckIndex][stepIndex], self.local_AC.critic_target: G})
+                            sess.run(self.local_AC.apply_grads_actor, feed_dict={self.local_AC.obs: self.s_buf[truckIndex][stepIndex], self.local_AC.chosen_action: self.a_buf[truckIndex][stepIndex], self.local_AC.advantage: error})
+                            #go to previous step and repeat
+                            stepIndex -= 1
+
+                        #global network updated. Reset episode buffers
+                        self.step_counter[truckIndex] = 0
+                        self.s_buf[truckIndex] = np.zeros((nSteps, nS))
+                        self.a_buf[truckIndex] = np.zeros(nSteps)
+                        self.r_buf[truckIndex] = np.zeros(nSteps)
+                        #match wieghts of local network to weights of global network
+                        sess.run(self.update_local_ops)
+                        #get action for current state
+                        cur_action_probs = self.local_AC.action_probs.eval(feed_dict={self.local_AC.obs: state[i_episode]}, session=sess)
+                        action = np.random.choice(np.arange(nA), p=cur_action_probs)
+
+                    else: #not-learning (just behaving)
+                        cur_action_probs = self.local_AC.action_probs.eval(feed_dict={self.local_AC.obs: state[i_episode]}, session=sess)
+                        action = np.random.choice(np.arange(nA), p=cur_action_probs)
+                        #Iterations += 1
+
+                else: #first ever decision
                     cur_action_probs = self.local_AC.action_probs.eval(feed_dict={self.local_AC.obs: state[i_episode]}, session=sess)
                     action = np.random.choice(np.arange(nA), p=cur_action_probs)
                     Iterations = 1
+
                 #set up for next decision call
                 np.copyto(old_state[truckIndex], state[i_episode])
                 old_action[truckIndex] = action
                 old_time[truckIndex] = time
+                #populate episode buffer for state and action
+                np.copyto(self.s_buf[truckIndex][self.step_counter[truckIndex]], old_state[truckIndex])
+                self.a_buf[truckIndex][self.step_counter[truckIndex]] = old_action[truckIndex]
                 return action, old_state, old_action, old_time, Iterations, Mean_TD_Error
 
 
@@ -565,7 +602,7 @@ def main():
         trainer_actor = tf.train.AdamOptimizer(learning_rate=alpha_actor)
         master_network = AC_Network(nS, nA, 'global', None, None)
         #num_threads = multiprocessing.cpu_count() #TODO does each thread run on a different cpu core ?
-        num_threads = 2
+        num_threads = 3
         workers = []
         #create workers
         for i in range(num_threads):
@@ -592,6 +629,12 @@ def main():
             #initialize environment threads
             env_threads = []
             for worker in workers:
+                #reset episode buffers
+                worker.s_buf = np.zeros(((nTrucks, nSteps, nS)))
+                worker.a_buf = np.zeros((nTrucks, nSteps))
+                worker.r_buf = np.zeros((nTrucks, nSteps))
+                worker.step_counter = np.zeros(nTrucks).astype(int)
+
                 run_sim_args = [nTrucks, BucketA_capacity, BucketB_capacity, Truck1_capacity, Truck2_capacity, Truck1_speedRatio, Truck2_speedRatio, worker, old_state, old_time, old_action, Iterations, Mean_TD_Error, i_episode, coord, sess]
                 # Print num of episode
                 print "\rEpisode: ", i_episode + 1, " / ", num_episodes
@@ -613,7 +656,7 @@ def main():
                 stats.episode_rewards[i] = ProdRate[i]
                 stats.episode_loss[i] = Mean_Loss[i]
                 #print "Mean_Loss[%d] = %r \t eploss[%d] = %r" % (i, Mean_Loss[i], i, stats.episode_loss[i])
-        plotting.plot_episode_stats(stats, name='A3C' smoothing_window=20)
+        plotting.plot_episode_stats(stats, name='A3C', smoothing_window=20)
 
 if __name__ == '__main__':
     main()
